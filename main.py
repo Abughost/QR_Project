@@ -3,40 +3,77 @@ import logging
 import sys
 from os import getenv
 
-from aiogram import Bot, Dispatcher, html
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram import Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message
-
+from aiogram.types import Message, ReplyKeyboardMarkup
 from dotenv import load_dotenv
+
+from db.models import *
+from db.config import *
+
 load_dotenv()
+
 
 TOKEN = getenv("BOT_TOKEN")
 
 
 dp = Dispatcher()
 
+dp.message(CommandStart(deep_link=True))
+async def start_with_code(message: Message, command: CommandStart.Command):
 
-@dp.message(CommandStart())
-async def command_start_handler(message: Message) -> None:
-    await message.answer(f"Hello, {html.bold(message.from_user.full_name)}!")
+    select_query =
+    code = command.args
 
+    if not code:
+        await message.answer("QR kod yo'q!")
+        return
 
-@dp.message()
-async def echo_handler(message: Message) -> None:
+    if code in used_codes:
+        await message.answer("Bu QR code ishlatilgan ❌")
+        return
 
-    try:
-        await message.send_copy(chat_id=message.chat.id)
-    except TypeError:
-        await message.answer("Nice try!")
+    user_id = message.from_user.id
+    pending_users[user_id] = {"code": code}
+    await message.answer("Full ismingizni kiriting 👇")
 
+@dp.message(F.text)
+async def handle_name(message: Message):
+    user_id = message.from_user.id
 
-async def main() -> None:
-    bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    if user_id not in pending_users or "name" in pending_users[user_id]:
+        return
 
-    # And the run events dispatching
-    await dp.start_polling(bot)
+    pending_users[user_id]["name"] = message.text
+
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Kontakt ulashish 📱", request_contact=True)]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer("Telefon raqamingizni ulashing 👇", reply_markup=kb)
+
+@dp.message(F.contact)
+async def handle_contact(message: Message):
+    user_id = message.from_user.id
+
+    if user_id not in pending_users or "name" not in pending_users[user_id]:
+        return
+
+    name = pending_users[user_id]["name"]
+    phone = message.contact.phone_number
+    code = pending_users[user_id]["code"]
+
+    with open("registrations.txt", "a") as file:
+        file.write(f"{user_id},{name},{phone},{code}\n")
+
+    used_codes.add(code)
+    del pending_users[user_id]
+
+    await message.answer("Muvaffaqiyatli konkurs ishtirokchisi bo'ldingiz! ✅", reply_markup=ReplyKeyboardRemove())
+
 
 
 if __name__ == "__main__":
