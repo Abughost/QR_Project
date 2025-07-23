@@ -111,14 +111,12 @@ async def handle_contact(message: Message):
         if conn:
             cursor = conn.cursor()
 
-            # 🟩 1. users jadvaliga ism, telefon va user_id yozish
             cursor.execute("""
                 INSERT INTO users (user_id, name, phone)
                 VALUES (%s, %s, %s)
                 ON CONFLICT (user_id) DO NOTHING
             """, (str(user_id), name, phone))
 
-            # 🟩 2. qr_codes jadvalida QR code ni ishlatilgan deb belgilash
             cursor.execute("""
                 UPDATE qr_codes
                 SET used = true, user_id = %s
