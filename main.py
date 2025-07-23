@@ -1,13 +1,17 @@
 import asyncio
 import logging
 import sys
+import psycopg2
 from os import getenv
+
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=".env")
+
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from dotenv import load_dotenv
-from sqlalchemy.dialects.postgresql import psycopg2
 
 from db.models import *
 
@@ -89,6 +93,9 @@ async def handle_name(message: Message):
     )
     await message.answer("Telefon raqamingizni ulashing 👇", reply_markup=kb)
 
+
+from datetime import datetime
+
 @dp.message(F.contact)
 async def handle_contact(message: Message):
     user_id = message.from_user.id
@@ -103,13 +110,27 @@ async def handle_contact(message: Message):
     with get_db_connection() as conn:
         if conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE qr_codes SET used = true, user_id = %s WHERE code = %s", (user_id, code))
+
+            # 🟩 1. users jadvaliga ism, telefon va user_id yozish
+            cursor.execute("""
+                INSERT INTO users (user_id, name, phone)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id) DO NOTHING
+            """, (str(user_id), name, phone))
+
+            # 🟩 2. qr_codes jadvalida QR code ni ishlatilgan deb belgilash
+            cursor.execute("""
+                UPDATE qr_codes
+                SET used = true, user_id = %s
+                WHERE code = %s
+            """, (str(user_id), code))
+
             conn.commit()
 
     used_codes.add(code)
     del pending_users[user_id]
 
-    await message.answer("Muvaffaqiyatli konkurs ishtirokchisi bo'ldingiz! ✅", reply_markup=ReplyKeyboardRemove())
+    await message.answer("Muvaffaqiyatli ro'yxatdan o'tdingiz ✅", reply_markup=ReplyKeyboardRemove())
 
 async def main():
     try:
