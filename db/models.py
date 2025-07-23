@@ -4,7 +4,7 @@ from sqlalchemy.testing.schema import mapped_column
 
 from db.config import *
 
-engine = create_engine("postgresql+psycopg2://postgres:1@localhost:5432/shop_db")
+engine = create_engine("postgresql+psycopg2://postgres:1@localhost:5432/postgres")
 
 class Base(DeclarativeBase):
     pass

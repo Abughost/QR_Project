@@ -2,7 +2,7 @@ import sqlalchemy
 from sqlalchemy import insert, create_engine
 from sqlalchemy.orm import sessionmaker
 
-engine = create_engine("postgresql+psycopg2://postgres:1@localhost:5432/shop_db")
+engine = create_engine("postgresql+psycopg2://postgres:1@localhost:5432/postgres")
 
 class CRUD:
 

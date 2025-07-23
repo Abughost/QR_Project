@@ -3,35 +3,69 @@ import logging
 import sys
 from os import getenv
 
-from aiogram import Dispatcher, F
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, ReplyKeyboardMarkup
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from dotenv import load_dotenv
+from sqlalchemy.dialects.postgresql import psycopg2
 
 from db.models import *
-from db.config import *
+
+pending_users = {}
+used_codes = set()
 
 load_dotenv()
 
-
 TOKEN = getenv("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("BOT_TOKEN is not set in .env file")
 
-
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-dp.message(CommandStart(deep_link=True))
-async def start_with_code(message: Message, command: CommandStart.Command):
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(
+            dbname=getenv("DB_NAME"),
+            user=getenv("DB_USER"),
+            password=getenv("DB_PASSWORD"),
+            host=getenv("DB_HOST"),
+            port=getenv("DB_PORT")
+        )
+        conn.autocommit = True
+        return conn
+    except psycopg2.Error as e:
+        print(f"Database ulanish xatosi: {e}")
+        return None
 
-    select_query =
+def load_initial_data():
+    global pending_users, used_codes
+    with get_db_connection() as conn:
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT code FROM qr_codes WHERE used = true")
+            used_codes = set(row[0] for row in cursor.fetchall())
+            pending_users = {}  # Yangi foydalanuvchilar uchun bo'sh
+
+load_initial_data()
+
+@dp.message(CommandStart(deep_link=True))
+async def start_with_code(message: Message, command: CommandStart):
+    select_query = "SELECT code, user_id FROM qr_codes WHERE used = false"
     code = command.args
 
     if not code:
         await message.answer("QR kod yo'q!")
         return
 
-    if code in used_codes:
-        await message.answer("Bu QR code ishlatilgan ❌")
-        return
+    with get_db_connection() as conn:
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute(select_query)
+            available_codes = {row[0] for row in cursor.fetchall()}
+            if code in used_codes or code not in available_codes:
+                await message.answer("Bu QR code ishlatilgan yoki mavjud emas ❌")
+                return
 
     user_id = message.from_user.id
     pending_users[user_id] = {"code": code}
@@ -66,16 +100,24 @@ async def handle_contact(message: Message):
     phone = message.contact.phone_number
     code = pending_users[user_id]["code"]
 
-    with open("registrations.txt", "a") as file:
-        file.write(f"{user_id},{name},{phone},{code}\n")
+    with get_db_connection() as conn:
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE qr_codes SET used = true, user_id = %s WHERE code = %s", (user_id, code))
+            conn.commit()
 
     used_codes.add(code)
     del pending_users[user_id]
 
     await message.answer("Muvaffaqiyatli konkurs ishtirokchisi bo'ldingiz! ✅", reply_markup=ReplyKeyboardRemove())
 
-
+async def main():
+    try:
+        logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+        logging.info("Bot ishga tushdi!")
+        await dp.start_polling(bot)
+    except Exception as e:
+        logging.error(f"Bot xatosi: {e}")
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
     asyncio.run(main())
